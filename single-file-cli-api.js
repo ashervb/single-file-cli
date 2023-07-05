@@ -92,11 +92,11 @@ exports.DEFAULT_OPTIONS = DEFAULT_OPTIONS;
 exports.VALID_URL_TEST = VALID_URL_TEST;
 exports.initialize = initialize;
 
-async function initialize(options) {
+async function initialize(options, instance) {
 	options = Object.assign({}, DEFAULT_OPTIONS, options);
 	maxParallelWorkers = options.maxParallelWorkers;
 	backend = require(backEnds[options.backEnd]);
-	await backend.initialize(options);
+	await backend.initialize(options, instance);
 	if (options.crawlSyncSession || options.crawlLoadSession) {
 		try {
 			tasks = JSON.parse(fs.readFileSync(options.crawlSyncSession || options.crawlLoadSession).toString());

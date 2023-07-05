@@ -23,7 +23,6 @@
 
 /* global singlefile, require, exports */
 
-const puppeteer = require("puppeteer-core");
 const scripts = require("./common/scripts.js");
 
 const EXECUTION_CONTEXT_DESTROYED_ERROR = "Execution context was destroyed";
@@ -32,7 +31,8 @@ const NETWORK_STATES = ["networkidle0", "networkidle2", "load", "domcontentloade
 
 let browser, context;
 
-exports.initialize = async options => {
+exports.initialize = async (options, instance) => {
+	const puppeteer = instance || require("puppeteer-core");
 	if (options.browserServer) {
 		browser = await puppeteer.connect({ browserWSEndpoint: options.browserServer });
 	} else {

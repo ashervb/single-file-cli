@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2020 Gildas Lormeau
+ * Copyright 2010-2024 Gildas Lormeau
  * contact : gildas.lormeau <at> gmail.com
  *
  * This file is part of SingleFile.
@@ -21,52 +21,35 @@
  *   Source.
  */
 
-/* global require, exports, URL */
+/* global URL */
 
-const fs = require("fs");
-const path = require("path");
-const scripts = require("./back-ends/common/scripts.js");
+import * as backend from "./lib/cdp-client.js";
+import { getZipScriptSource } from "./lib/single-file-script.js";
+import { Deno, path } from "./lib/deno-polyfill.js";
+
 const VALID_URL_TEST = /^(https?|file):\/\//;
 
 const DEFAULT_OPTIONS = {
 	removeHiddenElements: true,
 	removeUnusedStyles: true,
 	removeUnusedFonts: true,
-	removeSavedDate: false,
-	removeFrames: false,
 	compressHTML: true,
-	compressCSS: false,
 	loadDeferredImages: true,
 	loadDeferredImagesMaxIdleTime: 1500,
-	loadDeferredImagesBlockCookies: false,
-	loadDeferredImagesBlockStorage: false,
-	loadDeferredImagesKeepZoomLevel: false,
-	loadDeferredImagesDispatchScrollEvent: false,
 	filenameTemplate: "{page-title} ({date-locale} {time-locale}).html",
-	infobarTemplate: "",
-	includeInfobar: false,
 	filenameMaxLength: 192,
 	filenameMaxLengthUnit: "bytes",
 	filenameReplacedCharacters: ["~", "+", "\\\\", "?", "%", "*", ":", "|", "\"", "<", ">", "\x00-\x1f", "\x7F"],
 	filenameReplacementCharacter: "_",
-	maxResourceSizeEnabled: false,
 	maxResourceSize: 10,
 	backgroundSave: true,
 	removeAlternativeFonts: true,
 	removeAlternativeMedias: true,
 	removeAlternativeImages: true,
 	groupDuplicateImages: true,
-	saveRawPage: false,
-	resolveFragmentIdentifierURLs: false,
-	userScriptEnabled: false,
 	saveFavicon: true,
-	includeBOM: false,
 	insertMetaCSP: true,
-	insertMetaNoIndex: false,
 	insertSingleFileComment: true,
-	blockImages: false,
-	blockStylesheets: false,
-	blockFonts: false,
 	blockScripts: true,
 	blockVideos: true,
 	blockAudios: true
@@ -74,32 +57,19 @@ const DEFAULT_OPTIONS = {
 const STATE_PROCESSING = "processing";
 const STATE_PROCESSED = "processed";
 
-const backEnds = {
-	jsdom: "./back-ends/jsdom.js",
-	puppeteer: "./back-ends/puppeteer.js",
-	"puppeteer-firefox": "./back-ends/puppeteer-firefox.js",
-	"webdriver-chromium": "./back-ends/webdriver-chromium.js",
-	"webdriver-gecko": "./back-ends/webdriver-gecko.js",
-	"playwright-firefox": "./back-ends/playwright-firefox.js",
-	"playwright-chromium": "./back-ends/playwright-chromium.js",
-	"playwright-webkit": "./back-ends/playwright-webkit.js"
-};
+const { readTextFile, writeTextFile, writeFile, stdout, mkdir, stat, errors } = Deno;
+let tasks = [], maxParallelWorkers, sessionFilename;
 
-let backend, tasks = [], maxParallelWorkers = 8, sessionFilename;
-
-exports.getBackEnd = backEndName => require(backEnds[backEndName]);
-exports.DEFAULT_OPTIONS = DEFAULT_OPTIONS;
-exports.VALID_URL_TEST = VALID_URL_TEST;
-exports.initialize = initialize;
+export { initialize };
 
 async function initialize(options, instance) {
 	options = Object.assign({}, DEFAULT_OPTIONS, options);
-	maxParallelWorkers = options.maxParallelWorkers;
+	maxParallelWorkers = options.maxParallelWorkers || 8;
 	backend = require(backEnds[options.backEnd]);
 	await backend.initialize(options, instance);
 	if (options.crawlSyncSession || options.crawlLoadSession) {
 		try {
-			tasks = JSON.parse(fs.readFileSync(options.crawlSyncSession || options.crawlLoadSession).toString());
+			tasks = JSON.parse(await readTextFile(options.crawlSyncSession || options.crawlLoadSession));
 		} catch (error) {
 			if (options.crawlLoadSession) {
 				throw error;
@@ -122,7 +92,7 @@ async function capture(urls, options) {
 	newTasks = newTasks.filter(task => task && !taskUrls.includes(task.url));
 	if (newTasks.length) {
 		tasks = tasks.concat(newTasks);
-		saveTasks();
+		await saveTasks();
 	}
 	await runTasks();
 }
@@ -130,10 +100,10 @@ async function capture(urls, options) {
 async function finish(options) {
 	const promiseTasks = tasks.map(task => task.promise);
 	await Promise.all(promiseTasks);
-	if (options.crawlReplaceURLs) {
-		tasks.forEach(task => {
+	if (options.crawlReplaceURLs && !options.compressContent) {
+		for (const task of tasks) {
 			try {
-				let pageContent = fs.readFileSync(task.filename).toString();
+				let pageContent = await readTextFile(task.filename);
 				tasks.forEach(otherTask => {
 					if (otherTask.filename) {
 						pageContent = pageContent.replace(new RegExp(escapeRegExp("\"" + otherTask.originalUrl + "\""), "gi"), "\"" + otherTask.filename + "\"");
@@ -143,13 +113,13 @@ async function finish(options) {
 						pageContent = pageContent.replace(new RegExp(escapeRegExp("=" + otherTask.originalUrl + ">"), "gi"), "=" + filename + ">");
 					}
 				});
-				fs.writeFileSync(task.filename, pageContent);
+				await writeTextFile(task.filename, pageContent);
 			} catch (error) {
 				// ignored
 			}
-		});
+		}
 	}
-	if (!options.browserDebug) {
+	if (!options.browserDebug && !options.browserServer) {
 		return backend.closeBrowser();
 	}
 }
@@ -171,7 +141,7 @@ async function runNextTask() {
 		let taskOptions = JSON.parse(JSON.stringify(options));
 		taskOptions.url = task.url;
 		task.status = STATE_PROCESSING;
-		saveTasks();
+		await saveTasks();
 		task.promise = capturePage(taskOptions);
 		const pageData = await task.promise;
 		task.status = STATE_PROCESSED;
@@ -188,7 +158,7 @@ async function runNextTask() {
 				tasks.splice(tasks.length, 0, ...newTasks);
 			}
 		}
-		saveTasks();
+		await saveTasks();
 		await runTasks();
 	}
 }
@@ -201,26 +171,33 @@ function testMaxDepth(task) {
 
 function createTask(url, options, parentTask, rootTask) {
 	url = parentTask ? rewriteURL(url, options.crawlRemoveURLFragment, options.crawlRewriteRules) : url;
-	if (VALID_URL_TEST.test(url)) {
-		const isInnerLink = rootTask && url.startsWith(getHostURL(rootTask.url));
-		const rootBaseURIMatch = rootTask && rootTask.url.match(/(.*?)[^/]*$/);
-		const isChild = isInnerLink && rootBaseURIMatch && rootBaseURIMatch[1] && url.startsWith(rootBaseURIMatch[1]);
-		return {
-			url,
-			isInnerLink,
-			isChild,
-			originalUrl: url,
-			rootBaseURI: rootBaseURIMatch && rootBaseURIMatch[1],
-			depth: parentTask ? parentTask.depth + 1 : 0,
-			externalLinkDepth: isInnerLink ? -1 : parentTask ? parentTask.externalLinkDepth + 1 : -1,
-			options
-		};
+	if (!VALID_URL_TEST.test(url)) {
+		try {
+			url = url.replace(/\\/g, "/");
+			url = url.replace(/#/g, "%23");
+			url = new URL(url, import.meta.url).href;
+		} catch (error) {
+			throw new Error("Invalid URL or file path: " + url);
+		}
 	}
+	const isInnerLink = rootTask && url.startsWith(getHostURL(rootTask.url));
+	const rootBaseURIMatch = rootTask && rootTask.url.match(/(.*?)[^/]*$/);
+	const isChild = isInnerLink && rootBaseURIMatch && rootBaseURIMatch[1] && url.startsWith(rootBaseURIMatch[1]);
+	return {
+		url,
+		isInnerLink,
+		isChild,
+		originalUrl: url,
+		rootBaseURI: rootBaseURIMatch && rootBaseURIMatch[1],
+		depth: parentTask ? parentTask.depth + 1 : 0,
+		externalLinkDepth: isInnerLink ? -1 : parentTask ? parentTask.externalLinkDepth + 1 : -1,
+		options
+	};
 }
 
-function saveTasks() {
+async function saveTasks() {
 	if (sessionFilename) {
-		fs.writeFileSync(sessionFilename, JSON.stringify(
+		await writeTextFile(sessionFilename, JSON.stringify(
 			tasks.map(task => Object.assign({}, task, {
 				status: task.status == STATE_PROCESSING ? undefined : task.status,
 				promise: undefined,
@@ -252,36 +229,42 @@ function getHostURL(url) {
 async function capturePage(options) {
 	try {
 		let filename;
+		options.zipScript = getZipScriptSource();
 		const pageData = await backend.getPageData(options);
-		if (options.includeInfobar) {
-			await includeInfobarScript(pageData);
-		}
 		if (options.output) {
-			filename = getFilename(options.output, options);
+			filename = await getFilename(options.output, options);
 		} else if (options.dumpContent) {
-			console.log(pageData.content); // eslint-disable-line no-console
+			if (options.compressContent) {
+				await stdout.write(pageData.content);
+			} else {
+				console.log(pageData.content || ""); // eslint-disable-line no-console
+			}
 		} else {
-			filename = getFilename(pageData.filename, options);
+			filename = await getFilename(pageData.filename, options);
 		}
 		if (filename) {
-			const dirname = path.dirname(filename);
-			if (dirname) {
-				fs.mkdirSync(dirname, { recursive: true });
+			const directoryName = await path.dirname(filename);
+			if (directoryName !== ".") {
+				await mkdir(directoryName, { recursive: true });
 			}
-			fs.writeFileSync(filename, pageData.content);
+			if (pageData.content instanceof Uint8Array) {
+				await writeFile(filename, pageData.content);
+			} else {
+				await writeTextFile(filename, pageData.content);
+			}
 		}
 		return pageData;
 	} catch (error) {
 		const message = "URL: " + options.url + "\nStack: " + error.stack + "\n";
 		if (options.errorFile) {
-			fs.writeFileSync(options.errorFile, message, { flag: "a" });
+			await writeTextFile(options.errorFile, message, { append: true });
 		} else {
 			console.error(error.message || error, message); // eslint-disable-line no-console
 		}
 	}
 }
 
-function getFilename(filename, options, index = 1) {
+async function getFilename(filename, options, index = 1) {
 	if (Array.isArray(options.outputDirectory)) {
 		const outputDirectory = options.outputDirectory.pop();
 		if (outputDirectory.startsWith("/")) {
@@ -306,20 +289,16 @@ function getFilename(filename, options, index = 1) {
 			newFilename += " (" + index + ")";
 		}
 	}
-	if (fs.existsSync(newFilename)) {
+	try {
+		await stat(newFilename);
 		if (options.filenameConflictAction != "skip") {
 			return getFilename(filename, options, index + 1);
 		}
-	} else {
+	} catch (_) {
 		return newFilename;
 	}
 }
 
 function escapeRegExp(string) {
 	return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-async function includeInfobarScript(pageData) {
-	const infobarContent = await scripts.getInfobarScript();
-	pageData.content += "<script>document.currentScript.remove();" + infobarContent + "</script>";
 }

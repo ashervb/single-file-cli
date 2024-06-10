@@ -2,13 +2,15 @@
 
 ## Introduction
 
-SingleFile can be launched from the command line by running it into a (headless)
-browser. It runs through Node.js as a standalone script injected into the web
-page instead of being embedded into a WebExtension. To connect to the browser,
-it can use [Puppeteer](https://github.com/GoogleChrome/puppeteer) or
-[Selenium WebDriver](https://www.npmjs.com/package/selenium-webdriver).
-Alternatively, it can also emulate a browser with JavaScript disabled by using
-[jsdom](https://github.com/jsdom/jsdom).
+[SingleFile](https://github.com/gildas-lormeau/SingleFile) can be launched from the command line by running it into a (headless) browser. 
+
+It runs through Deno as a standalone script injected into the web page via the Chrome DevTools Protocol instead of being embedded into a WebExtension.
+
+## Installation
+
+SingleFile can be run without installing it, just download the executable file and save it in the directory of your choice here: https://github.com/gildas-lormeau/single-file-cli/releases
+
+Make sure Chrome or a Chromium-based browser is installed in the default folder. Otherwise you might need to set the `--browser-executable-path` option to help SingleFile locating the path of the executable file.
 
 ## Installation with Docker
 
@@ -59,105 +61,97 @@ Alternatively, it can also emulate a browser with JavaScript disabled by using
 
 ## Manual installation
 
-- Make sure Chrome or Firefox is installed and the executable can be found
-  through the `PATH` environment variable. Otherwise you will need to set the
-  `--browser-executable-path` option to help SingleFile locating it. As an
-  alternative to Chrome and Firefox, you can use jsdom by setting the
-  `--back-end` option to `jsdom`.
+- Install [Deno](https://deno.com/)
 
-- Install [Node.js](https://nodejs.org)
+- There are 3 ways to download the code of SingleFile, choose the one you prefer:
+  
+  - Download and install with `npm` (`npm` is installed with Node.js)
+  
+    ```sh
+    npm install "single-file-cli"
+    cd node_modules/single-file-cli
+    ```
 
-- There are 3 ways to download the code of SingleFile, choose the one you prefer
-  (`npm` is installed with Node.js):
-
-  - Download and install globally with `npm`
-
-    `npm install -g "single-file-cli"`
+    You can also install SingleFile globally with `-g` when running `npm install`.
 
   - Download and unzip manually the
     [master archive](https://github.com/gildas-lormeau/single-file-cli/archive/master.zip)
     provided by Github
 
-    `unzip master.zip .`
-
-    `cd single-file-cli-master`
-
-    `npm install`
+    ```sh
+    unzip master.zip .
+    cd single-file-cli-master
+    ```
 
   - Download with `git`
 
-    `git clone --depth 1 --recursive https://github.com/gildas-lormeau/single-file-cli.git`
+    ```sh
+    git clone --depth 1 --recursive https://github.com/gildas-lormeau/single-file-cli.git
+    cd single-file-cli
+    ```
 
-    `cd single-file-cli`
+- Make `single-file` executable (Linux/Unix/BSD etc.).
 
-    `npm install`
-
-- Make `single-file` executable (Linux/Unix/BSD etc.) if SingleFile is not
-  installed globally.
-
-  `chmod +x single-file`
-
-- To use Firefox instead of Chrome, you must download the
-  [Selenium WebDriver](https://www.npmjs.com/package/selenium-webdriver)
-  component (i.e. `geckodriver` for Firefox). Make sure it can be found through
-  the `PATH` environment variable or the `cli` folder. Otherwise you will need
-  to set the `--web-driver-executable-path` option to help WebDriver locating
-  the executable.
+  ```sh
+  chmod +x single-file
+  ```
 
 ## Run
 
 - Syntax
 
-  `single-file <url> [output] [options ...]`
+  ```sh
+  single-file <url> [output] [options ...]
+  ```
 
 - Display help
 
-  `single-file --help`
+  ```sh
+  single-file --help
+  ```
 
 - Examples
 
-  - Dump the processed content of https://www.wikipedia.org into the console
+  - Dump the HTML content of https://www.wikipedia.org into the console
 
-  `single-file https://www.wikipedia.org --dump-content`
-
-  - Save https://www.wikipedia.org into `wikipedia.html` in the current folder
-
-  `single-file https://www.wikipedia.org wikipedia.html`
+  ```sh
+  single-file https://www.wikipedia.org --dump-content
+  ```
 
   - Save https://www.wikipedia.org into `wikipedia.html` in the current folder
-    with Firefox instead of Chrome
 
-  `single-file https://www.wikipedia.org wikipedia.html --back-end=webdriver-gecko`
+  ```sh
+  single-file https://www.wikipedia.org wikipedia.html
+  ```
 
   - Save a list of URLs stored into `list-urls.txt` in the current folder
 
-  `single-file --urls-file=list-urls.txt`
+  ```sh
+  single-file --urls-file=list-urls.txt
+  ```
 
   - Save https://www.wikipedia.org and crawl its internal links with the query
     parameters removed from the URL
 
-  `single-file https://www.wikipedia.org --crawl-links=true --crawl-inner-links-only=true --crawl-max-depth=1 --crawl-rewrite-rule="^(.*)\\?.*$ $1"`
+  ```sh
+  single-file https://www.wikipedia.org --crawl-links=true --crawl-inner-links-only=true --crawl-max-depth=1 --crawl-rewrite-rule="^(.*)\\?.*$ $1"
+  ```
 
   - Save https://www.wikipedia.org and external links only
 
-  `single-file https://www.wikipedia.org --crawl-links=true --crawl-inner-links-only=false --crawl-external-links-max-depth=1 --crawl-rewrite-rule="^.*wikipedia.*$"`
+  ```sh
+  single-file https://www.wikipedia.org --crawl-links=true --crawl-inner-links-only=false --crawl-external-links-max-depth=1 --crawl-rewrite-rule="^.*wikipedia.*$"
+  ```
 
-## Troubleshooting
+## Compile executables
 
-- If the error message
-  `UnhandledPromiseRejectionWarning: Error: Browser is not downloaded. Run "npm install" or "yarn install" at ChromeLauncher.launch`
-  is displayed, it probably means that `single-file` was not able to find the
-  executable of the browser. Using the option `--browser-executable-path` to
-  pass to `single-file` the complete path of the executable fixes this issue.
+ - Compile executables into `/dist`
 
-- If saving a page takes an unusually long time, this may be due to a timeout
-  error that was automatically recovered. Setting `--browser-wait-until` to a
-  lower value (e.g. `networkidle0` or `load` instead of `networkidle2`) fixes
-  this issue.
+  ```sh
+  ./compile.sh
+  ```
+
 
 ## License
 
-SingleFile is licensed under AGPL. Code derived from third-party projects is
-licensed under MIT. Please contact me at gildas.lormeau &lt;at&gt; gmail.com if
-you are interested in licensing the SingleFile code for a commercial service or
-product.
+SingleFile and SingleFile CLI are licensed under AGPL. Code derived from third-party projects is licensed under MIT. Please contact me at gildas.lormeau &lt;at&gt; gmail.com if you are interested in licensing the SingleFile code for a commercial service or product.
